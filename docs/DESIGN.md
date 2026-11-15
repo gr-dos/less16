@@ -5,6 +5,7 @@
 **Executable:** `LESS.EXE` (required output name; verify the compiler/linker produces this filename)
 **Target:** GR-DOS / MS-DOS 4.00-compatible real-mode DOS, including 8086/8088 systems
 **Scope:** Small, useful, read-only full-screen text pager; not a port of GNU `less`
+**Repository template:** [`gr-dos/hello16`](https://github.com/gr-dos/hello16) conventions, adapted for Free Pascal (see §11)
 
 ## 1. Purpose
 
@@ -44,8 +45,13 @@ LESS [options] [filename]
 Options:
   -w, /W        Wrap long lines (default)
   -S, /S        Do not wrap long lines; enable horizontal scrolling
-  -h, -?, /?    Display short usage help and exit
+  -h, -?, /?,
+  --help        Display short usage help and exit
+  --version     Print "less (dos-less16) VERSION" and exit
 ```
+
+- `--help` and `--version` are required by the hello16 template conventions. `--version` prints exactly `less (dos-less16) <VERSION>`, where `<VERSION>` is the single line in the `VERSION` file (DOS-style: `0.01`, `0.02`, … `1.00`), compiled into the program at build time. `make test` checks that the output matches `VERSION`.
+- `--help`/`--version` exit with status 0. A bad option or operand exits with status 1, as in hello16. Additional nonzero codes for I/O failures are listed in §7.
 
 - Accept **zero or one** filename. With a filename, open that file for reading. Without a filename, read stdin **only if redirected or piped**; otherwise print usage and exit instead of treating navigation keys as file data.
 - Recognize DOS drive-qualified and relative/absolute paths. DOS option parsing must not mistake `C:\...` for a switch.
@@ -153,9 +159,23 @@ Suggested modules, which may initially be collapsed into fewer source files. The
 | `screen16.pas` | Screen geometry, text-mode rendering, status bar, cursor cleanup |
 | `keys16.pas` | Keyboard input and extended scan-code mapping |
 
+**Executable name:** the main program unit is `less16.pas`, so the compiler's default output would be `less16.exe`. The Makefile must set the output name explicitly (`-oless.exe`) so the build produces `less.exe`. DOS file names are case-insensitive, so `less.exe` on the Linux build host is `LESS.EXE` on DOS. CI and the release attach `less.exe`.
+
 ### 6.1 Toolchain
 
-Use the **Free Pascal i8086 / MS-DOS real-mode cross-compiler** on Linux. Do not accidentally target Free Pascal's separate **GO32v2/DPMI** DOS environment: it requires a newer CPU/runtime model and would defeat the 8086 goal. Free Pascal publishes an i8086-to-MS-DOS cross-compiler; pin and document the actual version/build and required runtime units during implementation.
+Use the **Free Pascal i8086 / MS-DOS real-mode cross-compiler** on Linux. Do not accidentally target Free Pascal's separate **GO32v2/DPMI** DOS environment: it requires a newer CPU/runtime model and would defeat the 8086 goal. The distribution packages of `fpc` (e.g. Ubuntu's 3.2.2) contain no i8086 target, so the cross-compiler is fetched separately.
+
+**Pinned toolchain:**
+
+- Package: `fpc-3.2.2.x86_64-linux.cross.i8086-msdos.tar.xz` from <https://downloads.freepascal.org/fpc/dist/3.2.2/i8086-msdos/>
+- SHA-256: `fda88f39548993df9b7345110a6b90e7bd64018e42c1ab51723fa16705b7f671` (about 168 MB)
+- Contents: `bin/ppcross8086` and RTL units for each memory model under `lib/fpc/3.2.2/units/msdos/<cpu>-<model>/`. No linker or assembler is included. The package also ships `80186-*`, `80286-*` and `80386-*` unit trees. The build must use the `8086-*` units with `-Cp8086`, or the RTL itself may contain instructions newer than the 8086.
+
+Following hello16's `scripts/fetch-libc16` pattern, `scripts/fetch-fpc8086` downloads the pinned archive, checks its SHA-256 *before* unpacking, and unpacks it into `build/fpc8086`. The script reuses the unpacked tree when the stamp matches. Version and hash change together, deliberately, in one commit. CI caches `build/fpc8086` keyed on the script's hash. For local development the same archive can instead be unpacked into a user location such as `~/opt/fpc/3.2.2`, and the build pointed at it with `make FPC8086_ROOT=$HOME/opt/fpc/3.2.2` (the default is `build/fpc8086`). The compiler is then `$(FPC8086_ROOT)/bin/ppcross8086`, and the units are under `$(FPC8086_ROOT)/lib/fpc/3.2.2/units/msdos/8086-<model>/`.
+
+**Linker/assembler:** none required. FPC 3.2.2's i8086-msdos target assembles and links with its internal tools: a test program built with `-Tmsdos -Cp8086 -WmCompact` and no NASM or Open Watcom `wlink` on `PATH` ran correctly under the 8086 DOSBox-X configuration. The only build dependency is the pinned FPC archive.
+
+**Memory model:** use the **compact** model (`-WmCompact`): near code (one 64 KiB code segment, ample for this program) with far data pointers. Read buffers, the sparse line index and the row cache can then be allocated on the heap outside the 64 KiB DGROUP without per-access segment juggling. If code outgrows 64 KiB, move to medium or large deliberately rather than by default. Record the final model and compiler flags in the Makefile and README.
 
 Possible Pascal units include `Dos` and `Crt`, but **verify behavior under redirected stdin/stdout before relying on them**. The Free Pascal `Crt` documentation warns about redirection interactions, so it is safer to isolate screen/keyboard access behind thin routines and use DOS file handles for input. For extended keys, BIOS keyboard scan codes or the documented two-part `ReadKey` convention can be used once tested on the actual i8086 target.
 
@@ -190,7 +210,15 @@ Keep rendering deterministic and avoid writing display output through standard o
 
 ## 8. Test plan and acceptance criteria
 
-Automate under GR-DOS in QEMU where possible; check on real 8088/8086 hardware or an XT-accurate emulator as a compatibility milestone.
+**Emulators.** As in hello16, **DOSBox-X** is the automated test environment for `make test` and CI. Tests run through a wrapper equivalent to hello16's `asm/tests/dosbox-8086` (`cputype=8086`, `core=normal`), so any 186+ instruction is an illegal opcode and the 8086 requirement is checked automatically. **GR-DOS under QEMU** is a manual compatibility check before release (real DOS 4.00 `COMMAND.COM` pipes, `TEMP` handling, `C:\DOS` install), followed by real 8088/8086 hardware or an XT-accurate emulator as a milestone.
+
+**Test strategy.** hello16's `tests/run.sh` runs one `steps.bat` in headless DOSBox-X and compares captured stdout and exit status on the host. That covers the non-interactive behavior (`--help`, `--version`, usage errors, missing files, no-stdin usage, exit codes). It cannot observe a full-screen viewer that writes to video memory and reads the BIOS keyboard. Interactive behavior is tested in three layers:
+
+1. **Unit tests on the host:** `lines16`, `view16` and, where possible, `input16` are written so they don't depend on the screen or keyboard units. A host test program (native `fpc` on Linux) can then exercise CR/LF/CRLF handling across buffer boundaries, tab expansion, the sparse index, wrapping and horizontal offsets against fixture files. This is fast and needs no emulator.
+2. **Scripted interaction in DOSBox-X:** feed keystrokes with DOSBox-X's `AUTOTYPE` command (or an equivalent key-injection mechanism), and capture the screen after each step. Screen capture uses a hidden test option that dumps the text-mode video buffer to a file on quit, or DOSBox-X's own screen capture. Compare against expected screen text on the host. Prototype this early. If it proves unreliable, fall back to layer 3.
+3. **Hidden test mode (fallback):** an undocumented option that reads a key script from a file and writes rendered screens to a file. It drives the real event loop with the BIOS keyboard and video layers replaced. It must not change normal behavior and is excluded from `--help`.
+
+**Pipes and redirection in the test emulator.** Early on, verify that the DOSBox-X shell supports `TYPE FOO.TXT | LESS` and `LESS < FOO.TXT`, and what handle 0 looks like in each case. DOSBox implements pipes with temporary files, so stdin may appear seekable there but not under real `COMMAND.COM`. The non-seekable staging path must therefore also be covered by a test that forces it (for example a test option or a character-device stdin) and checked under GR-DOS/QEMU.
 
 ### Functional tests
 
@@ -229,8 +257,23 @@ Future work should be additive, using the input, navigation and rendering bounda
 3. What scratch-file naming/creation strategy is safe on DOS 4.00, and how should `TEMP`/`TMP` be resolved when unset?
 4. What sparse-index spacing and cache size give usable XT scrolling without excessive memory use?
 5. How should viewport positioning on wrap-toggle behave when currently inside a long wrapped logical line?
+6. ~~Does the pinned FPC 3.2.2 i8086-msdos toolchain link without external tools?~~ **Resolved:** yes, its internal assembler and linker suffice (§6.1).
+7. How does stdin appear (seekable or not, file or device) for `|` and `<` under the DOSBox-X shell versus GR-DOS `COMMAND.COM`, and how is the non-seekable path tested in CI (§8)?
+8. Is `AUTOTYPE` plus screen capture reliable enough in headless DOSBox-X for interactive tests, or is the hidden test mode needed (§8)?
 
 Resolve these with prototypes and tests rather than introducing broad features into v0.1.
+
+## 11. Repository conventions (hello16 template, Free Pascal layout)
+
+hello16 defines three layouts (C only, assembly only, C reference plus assembly). less16 is a fourth, **Free Pascal only**, and otherwise follows the template's conventions:
+
+- **Build:** GNU make on a Linux host. `make` fetches the pinned cross-compiler (`scripts/fetch-fpc8086`) and builds `less.exe`. `make test` runs `tests/run.sh` under DOSBox-X (override with `DOSBOX=`, `KEEP=1` keeps the work directory). `make clean` removes build outputs but not the `build/` tool cache.
+- **Version:** the one line in `VERSION`, starting at `0.01` and compiled in. `--version` output is checked by `make test`.
+- **`main` is protected:** changes land only through pull requests from feature branches (e.g. `graham/impl`). The required `test` status check comes from `ci.yml`. The rules apply to administrators, and force pushes and deletion are disabled (same `gh api` settings as hello16).
+- **CI (`.github/workflows/ci.yml`):** on every PR and every push to `main`: restore or fetch the cached FPC toolchain (in place of hello16's libc16/Watcom cache), install `dosbox-x` (no NASM or Watcom needed), then `make` and `make test`.
+- **Release (`.github/workflows/release.yml`):** on a push to `main`, if `VERSION` names a version without a `v<VERSION>` tag: build, test, tag, and publish a GitHub release with `less.exe` attached.
+- **README:** adapt hello16's README. Replace the libc16/Open Watcom sections with the pinned FPC toolchain, memory model and compiler flags. Describe the Free Pascal layout. Document usage, keys, exit codes and the `TEMP`/`TMP` requirement for piped input.
+- **Files:** `less16.pas` and its units, `Makefile`, `VERSION`, `scripts/fetch-fpc8086`, `tests/run.sh` (plus the 8086 DOSBox-X wrapper and any host unit tests), the two workflows, `README.md`, `LICENSE`, and `.gitignore` (ignoring `*.o`, `*.ppu`, `*.exe`, `*.map`, `/build/`).
 
 ## References
 
