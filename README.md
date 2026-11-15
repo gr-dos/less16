@@ -33,6 +33,7 @@ only if it is redirected or piped.
 |---|---|
 | Up / Down | one row (a wrapped segment, or a line with `-S`) |
 | PgUp / PgDn | one screen, keeping one row of overlap |
+| Ctrl+Y / Space, Ctrl+V | the same as PgUp / PgDn |
 | Home / End | beginning / end of the input |
 | Left / Right | scroll 8 columns (no-wrap mode only) |
 | `W` | toggle wrapping |
@@ -105,7 +106,8 @@ template conventions for gr-dos utilities, in a Free Pascal layout:
    `--test-keys=SCRIPT` replaces the keyboard with SCRIPT (`U` `D` up
    and down, `P` `N` page up and down, `H` `E` home and end, `L` `R`
    left and right, `W` wrap, `Q` quit, `.` write the screen to standard
-   output) and the screen with an off-screen buffer, and
+   output, `#NN` the key with decimal ASCII code NN, such as `#32` for
+   Space) and the screen with an off-screen buffer, and
    `--test-screen=CxR` sets its size. DOSBox-X's `AUTOTYPE` also
    drives the real keyboard and video path as a smoke test.
 4. **CI must pass before merging:** `.github/workflows/ci.yml` builds and

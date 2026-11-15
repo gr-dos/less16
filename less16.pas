@@ -55,8 +55,8 @@ begin
   WriteLn(F, '      --help     display this help and exit');
   WriteLn(F, '      --version  output version information and exit');
   WriteLn(F);
-  WriteLn(F, 'Keys: Up/Down line, PgUp/PgDn screen, Home/End, Left/Right');
-  WriteLn(F, 'scroll (no-wrap), W toggle wrap, Q or Esc quit.');
+  WriteLn(F, 'Keys: Up/Down line, PgUp/PgDn (or Ctrl+Y, Space/Ctrl+V) screen,');
+  WriteLn(F, 'Home/End, Left/Right scroll (no-wrap), W toggle wrap, Q or Esc quit.');
 end;
 
 { Writes "less: WHAT 'ARG'" and the --help hint to standard error. }

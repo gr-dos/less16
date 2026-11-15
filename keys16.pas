@@ -11,7 +11,9 @@ type
 
 { Script is used instead of the keyboard when Test is true:
   U D up/down, P N page up/down, H E home/end, L R left/right,
-  W wrap, Q quit, '.' dump the screen.  The end of the script quits. }
+  W wrap, Q quit, '.' dump the screen, and #NN the key whose ASCII
+  code is decimal NN, decoded as from the keyboard (#32 is Space).
+  The end of the script quits. }
 procedure KeysInit(Test: Boolean; const Script: String);
 function GetKey: TKey;
 
@@ -32,7 +34,24 @@ begin
   TestPos := 0;
 end;
 
+{ Decodes an ASCII key code from the keyboard; False if unbound. }
+function CharKey(C: Byte; var K: TKey): Boolean;
+begin
+  CharKey := True;
+  case C of
+    Ord('q'), Ord('Q'), 27, 3: K := kQuit;     { Esc, Ctrl+C }
+    Ord('w'), Ord('W'): K := kWrap;
+    32, 22: K := kPgDn;                        { Space, Ctrl+V }
+    25: K := kPgUp;                            { Ctrl+Y }
+  else
+    CharKey := False;
+  end;
+end;
+
 function ScriptKey: TKey;
+var
+  C: Word;
+  K: TKey;
 begin
   while True do
   begin
@@ -41,6 +60,22 @@ begin
     begin
       ScriptKey := kQuit;
       Exit;
+    end;
+    if TestScript[TestPos] = '#' then
+    begin
+      C := 0;
+      while (TestPos < Length(TestScript)) and
+            (TestScript[TestPos + 1] in ['0'..'9']) do
+      begin
+        Inc(TestPos);
+        C := C * 10 + Ord(TestScript[TestPos]) - Ord('0');
+      end;
+      if (C <= 255) and CharKey(Byte(C), K) then
+      begin
+        ScriptKey := K;
+        Exit;
+      end;
+      Continue;
     end;
     case UpCase(TestScript[TestPos]) of
       'U': begin ScriptKey := kUp; Exit; end;
@@ -61,6 +96,7 @@ end;
 function GetKey: TKey;
 var
   R: Registers;
+  K: TKey;
 begin
   if TestMode then
   begin
@@ -87,11 +123,11 @@ begin
         $4B: begin GetKey := kLeft; Exit; end;
         $4D: begin GetKey := kRight; Exit; end;
       end
-    else
-      case R.AL of
-        Ord('q'), Ord('Q'), 27, 3: begin GetKey := kQuit; Exit; end;
-        Ord('w'), Ord('W'): begin GetKey := kWrap; Exit; end;
-      end;
+    else if CharKey(R.AL, K) then
+    begin
+      GetKey := K;
+      Exit;
+    end;
   end;
 end;
 

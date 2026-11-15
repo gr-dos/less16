@@ -67,6 +67,8 @@ Options:
 | **Down arrow** | Next displayed row | Next logical line |
 | **Page Up** | One screenful up | One screenful up |
 | **Page Down** | One screenful down | One screenful down |
+| **Ctrl+Y** | Same as Page Up | Same as Page Up |
+| **Space**, **Ctrl+V** | Same as Page Down | Same as Page Down |
 | **Left arrow** | No effect | Scroll viewport left |
 | **Right arrow** | No effect | Scroll viewport right |
 | **Home** | Beginning of input | Beginning of input |

@@ -120,6 +120,11 @@ less --test-screen=40x4 --test-keys=E. long.txt >o19.txt
 call rc 19
 less --test-screen=40x4 --test-keys=E.PPPPPPPPPP. mixed.txt >o28.txt
 call rc 28
+rem --- key aliases: Space and Ctrl+V page down, Ctrl+Y pages up
+less --test-screen=40x6 --test-keys=.N.N.P. a.txt >o29.txt
+call rc 29
+less --test-screen=40x6 --test-keys=.#32.#22.#25. a.txt >o30.txt
+call rc 30
 rem --- input errors
 less missing.txt >o20.txt
 call rc 20
@@ -463,6 +468,13 @@ m 2980
  mixed.txt  Line 2978/3000  WRAP
 --
 EOS
+
+# key aliases behave exactly like PgDn and PgUp
+rc 29 0
+rc 30 0
+check "step 29: paged" grep -q 'Line 9 ' O29.TXT
+check "step 30: Space, Ctrl+V, Ctrl+Y same as PgDn, PgDn, PgUp" \
+    cmp -s O29.TXT O30.TXT
 
 # input errors
 rc 20 2
