@@ -1,6 +1,6 @@
 # less16 — Minimal Full-Screen Pager for DOS
 
-**Status:** Proposed design (v0.1)
+**Status:** Implemented in v0.01 (decisions in §10)
 **Implementation language:** Free Pascal
 **Executable:** `LESS.EXE` (required output name; verify the compiler/linker produces this filename)
 **Target:** GR-DOS / MS-DOS 4.00-compatible real-mode DOS, including 8086/8088 systems
@@ -252,14 +252,24 @@ Future work should be additive, using the input, navigation and rendering bounda
 
 ## 10. Open design decisions to resolve during implementation
 
-1. Which screen and keyboard primitives compile and behave correctly in Free Pascal's **i8086 MS-DOS** target without interfering with redirected stdin?
-2. Does the target RTL expose reliable DOS handle seek/read operations with 32-bit offsets, or should a small DOS interrupt wrapper be used?
-3. What scratch-file naming/creation strategy is safe on DOS 4.00, and how should `TEMP`/`TMP` be resolved when unset?
-4. What sparse-index spacing and cache size give usable XT scrolling without excessive memory use?
-5. How should viewport positioning on wrap-toggle behave when currently inside a long wrapped logical line?
-6. ~~Does the pinned FPC 3.2.2 i8086-msdos toolchain link without external tools?~~ **Resolved:** yes, its internal assembler and linker suffice (§6.1).
-7. How does stdin appear (seekable or not, file or device) for `|` and `<` under the DOSBox-X shell versus GR-DOS `COMMAND.COM`, and how is the non-seekable path tested in CI (§8)?
-8. Is `AUTOTYPE` plus screen capture reliable enough in headless DOSBox-X for interactive tests, or is the hidden test mode needed (§8)?
+All resolved in v0.01; the decisions are recorded here.
+
+1. **Screen and keyboard primitives:** the `Crt` unit is not used. `screen16` writes character/attribute cells directly to video memory (B000h for mode 7, B800h for modes 0–3, at the BIOS page offset), reads the mode and width from INT 10h AH=0Fh and the row count from the BIOS data area when an EGA or later is present (25 otherwise), and hides/restores the cursor with INT 10h. Other video modes exit with a diagnostic. `keys16` reads INT 16h AH=00h. Neither touches standard input or output. Direct writes may show snow on a real IBM CGA in 80-column mode; that is accepted for v0.1.
+2. **DOS handle I/O:** a small wrapper over INT 21h (`MsDos` with `Registers`) for open (3Dh, read-only), read (3Fh), seek (42h, 32-bit `LongInt` offsets), IOCTL device information (4400h), create-unique (5Ah), write, close and delete. The RTL's file routines are not used.
+3. **Scratch files:** standard input is used directly if IOCTL reports a file and seeking works (MS-DOS `COMMAND.COM` implements pipes with temporary files, and DOSBox-X behaves the same, so pipes and `<` redirection need no scratch file; still to be confirmed under GR-DOS). A device on handle 0 (e.g. `< AUX`, `< NUL`) is spooled with INT 21h 5Ah into `TEMP`, else `TMP`; 5Ah never overwrites an existing file. With neither set, or if creation or writing fails, the program exits with a diagnostic naming `TEMP`/`TMP`. The file is closed and deleted by the exit procedure on every exit path. Ctrl+C/Ctrl+Break in the keyboard buffer abort spooling cleanly.
+4. **Index and caches:** a checkpoint every 32 lines (4 bytes each, in 16 KiB chunks allocated on demand: about 125 KiB per million lines), four 4 KiB read blocks with LRU replacement, a 32-entry line cache (start, end, next and display width), and eight column cursors so consecutive rows of a long wrapped line resume rather than rescan. The line-end scan is 8086 assembly, and lines wholly inside a block are indexed in one tight loop. Measured in DOSBox-X at a fixed 300 cycles (roughly XT speed) on a 254 KB, 10,000-line file: start-up about 1 s, End about 8 s (the first time; it then stays indexed), Page Down about 0.4 s, Up about 0.3 s. A single very long line is rescanned from its start when moving *up* within it.
+5. **Wrap toggle:** keeps the current top logical line and shows it from its first row (and column 0), then clamps so the screen stays full. Inside a long wrapped line this moves the view back to that line's start.
+6. **Toolchain:** FPC 3.2.2's internal assembler and linker suffice (§6.1).
+7. **Stdin under DOSBox-X:** `TYPE FOO.TXT | LESS` and `LESS < FOO.TXT` both give a seekable file on handle 0. The non-seekable path is tested in CI with `< NUL` (a device): no `TEMP`/`TMP`, a missing directory, and a working one (checking that the scratch file is removed).
+8. **Interactive tests:** the hidden test mode (`--test-keys=SCRIPT`, `--test-screen=CxR`) drives the real event loop with an off-screen buffer and a key script, and `.` in the script writes the screen to standard output; this carries the screen-content tests. `AUTOTYPE` works in headless DOSBox-X as a smoke test of the real BIOS keyboard and video path (the program must quit with status 0), with one quirk: its `pagedown` key drops the key after it, so the tests use the keypad (`kp_3`, `kp_9`). A lost key hangs the step, and the suite fails on the missing result.
+
+Other decisions made during implementation:
+
+- A single Ctrl+Z as the **last byte** of the input is treated as the DOS end-of-text marker and not shown. Other control bytes (0–31 except tab) show as `.`.
+- INT 23h (Ctrl+C) is replaced by an `IRET` handler and BREAK is turned off while running (restored on exit), so DOS cannot abort the program past its cleanup. Ctrl+C and Ctrl+Break are read from the BIOS as quit keys. INT 24h (critical error) returns *Fail*, so a drive error becomes a diagnostic rather than an *Abort, Retry, Fail* prompt over the viewer. DOS restores both vectors at exit.
+- Right-arrow scrolling is clamped to the widest line currently on the screen.
+- Exit status: 0 normal quit, 1 usage error (including no filename with console stdin), 2 input, memory, display or scratch-file error. The unit structure adds a small `util16` (fatal errors, messages) to the units of §6.
+- Host-native unit tests (§8 layer 1) were not needed: the test mode covers the line and layout logic in the real DOS build.
 
 Resolve these with prototypes and tests rather than introducing broad features into v0.1.
 

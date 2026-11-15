@@ -10,8 +10,9 @@ GNU `less`. The design is in [`docs/DESIGN.md`](docs/DESIGN.md).
 `less.exe` is a compact-model, real-mode 8086 executable that runs on
 any DOS from an original PC up. It needs no DPMI, XMS or EMS.
 
-**Status:** startup skeleton. Argument parsing, `--help` and `--version`
-work; the viewer is not implemented yet.
+`less.exe` is about 41 KB. It reads files of any size (32-bit offsets,
+a sparse line index) without loading them into memory: it keeps 16 KB
+of read buffers and 4 bytes per 32 lines of input.
 
 ## Usage
 
@@ -28,12 +29,35 @@ work; the viewer is not implemented yet.
 Options are case-insensitive. With no filename, standard input is read
 only if it is redirected or piped.
 
-Keys: Up/Down move one row, PgUp/PgDn one screen, Home/End to the
-beginning/end, Left/Right scroll horizontally in no-wrap mode, `W`
-toggles wrapping, `Q` or Esc quits.
+| Key | Action |
+|---|---|
+| Up / Down | one row (a wrapped segment, or a line with `-S`) |
+| PgUp / PgDn | one screen, keeping one row of overlap |
+| Home / End | beginning / end of the input |
+| Left / Right | scroll 8 columns (no-wrap mode only) |
+| `W` | toggle wrapping |
+| `Q`, Esc, Ctrl+C | quit |
+
+The bottom row shows the file name (or `[stdin]`), the top line number
+(and the line count once known), `WRAP`/`NOWRAP`, the column when
+scrolled, and `(END)` when the end is on screen.
+
+Text is shown as single-byte characters in the current code page. Line
+ends may be CRLF, LF or CR; tabs expand to 8-column stops; other control
+bytes show as `.`; a final Ctrl+Z is ignored. The video mode must be a
+text mode (MDA, CGA, EGA or VGA; 40 or 80 columns, any number of rows).
+
+**Piped input:** `TYPE FOO.TXT | LESS` and `LESS < FOO.TXT` read DOS's
+pipe or redirection file directly. Input that cannot be seeked (a
+device, such as `LESS < AUX`) is first copied to a scratch file in the
+directory named by `TEMP` (or `TMP`); with neither set it is an error,
+so nothing is written to a disk you did not choose. The scratch file is
+removed on exit. On a two-floppy system, view files by name
+(`LESS B:\README.TXT`), which never writes anything.
 
 Exit status: 0 on success, 1 for a bad option or operand (or no input),
-2 for an I/O error.
+2 for an input, memory, display or scratch-file error. Messages go to
+standard error.
 
 ## Building
 
@@ -76,8 +100,14 @@ template conventions for gr-dos utilities, in a Free Pascal layout:
    directory) and runs it as an 8086 (`cputype=8086`, `core=normal`), so
    a later-CPU instruction fails the suite. One `steps.bat` runs every
    DOS-side step; step N records its exit status in `RN.TXT` and its
-   standard output in `ON.TXT`, checked on the host. Interactive
-   behavior is planned in `docs/DESIGN.md` §8.
+   standard output in `ON.TXT`, checked on the host. The viewer is
+   tested with hidden options, not shown in `--help`:
+   `--test-keys=SCRIPT` replaces the keyboard with SCRIPT (`U` `D` up
+   and down, `P` `N` page up and down, `H` `E` home and end, `L` `R`
+   left and right, `W` wrap, `Q` quit, `.` write the screen to standard
+   output) and the screen with an off-screen buffer, and
+   `--test-screen=CxR` sets its size. DOSBox-X's `AUTOTYPE` also
+   drives the real keyboard and video path as a smoke test.
 4. **CI must pass before merging:** `.github/workflows/ci.yml` builds and
    runs `make test` on every pull request and push to `main`.
 5. **`--version` and `VERSION`:** `less --version` prints
@@ -90,7 +120,13 @@ template conventions for gr-dos utilities, in a Free Pascal layout:
 
 ## Files
 
-- `less16.pas`: the program
+- `less16.pas`: the program (options, start-up, event loop, cleanup)
+- `input16.pas`: DOS handle input, block cache, stdin spooling
+- `lines16.pas`: line ends, sparse line index, tabs, line rendering
+- `view16.pas`: layout, navigation, status line
+- `screen16.pas`: text-mode video and the test-mode screen
+- `keys16.pas`: BIOS keyboard and the test-mode key script
+- `util16.pas`: fatal errors and messages
 - `Makefile`: Free Pascal build (`make`, `make test`, `make clean`)
 - `scripts/fetch-fpc8086`: fetch the pinned cross-compiler
 - `VERSION`: the version, compiled in and printed by `--version`

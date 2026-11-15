@@ -21,7 +21,7 @@ VERSION := $(shell cat VERSION)
 FPCFLAGS = -n -Tmsdos -Cp8086 -Wm$(MODEL) -O2 -Xs -XX -CX \
            -vewn -Sew -Fu'$(RTLUNITS)/*' -Fi$(OBJDIR) -FU$(OBJDIR)
 
-SOURCES := less16.pas
+SOURCES := $(wildcard *.pas)
 
 less.exe: $(SOURCES) $(OBJDIR)/version.inc $(PPC)
 	$(PPC) $(FPCFLAGS) -o$@ less16.pas
