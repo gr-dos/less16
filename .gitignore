@@ -1,0 +1,6 @@
+*.o
+*.ppu
+*.a
+*.exe
+*.map
+/build/
