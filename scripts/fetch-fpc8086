@@ -1,0 +1,39 @@
+#!/bin/sh
+#
+# Fetch the pinned Free Pascal i8086-msdos cross-compiler into DIR:
+# download the release archive, check its SHA-256 against the one below
+# before unpacking it, and unpack it as DIR (DIR/bin/ppcross8086 and
+# DIR/lib/fpc/VERSION/units/msdos/...).  Reuses DIR if it already holds
+# that archive.  Change version and sha256 together, deliberately.
+#
+# usage: scripts/fetch-fpc8086 [DIR]     (default: build/fpc8086)
+#
+# FPC8086_URL, if set, is fetched instead (a mirror); it must have the
+# same SHA-256.
+
+set -eu
+
+version=3.2.2
+sha256=fda88f39548993df9b7345110a6b90e7bd64018e42c1ab51723fa16705b7f671
+
+url=${FPC8086_URL:-https://downloads.freepascal.org/fpc/dist/$version/i8086-msdos/fpc-$version.x86_64-linux.cross.i8086-msdos.tar.xz}
+dir=${1:-build/fpc8086}
+stamp="$dir/.tar-sha256"
+
+if [ "$(cat "$stamp" 2>/dev/null)" != "$sha256" ]; then
+  mkdir -p "$(dirname "$dir")"
+  tarball="$dir.tar.xz"
+  if ! { [ -f "$tarball" ] && echo "$sha256  $tarball" | sha256sum -c --status; }; then
+    rm -f "$tarball"
+    curl -fsSL -o "$tarball.tmp" "$url"
+    echo "$sha256  $tarball.tmp" | sha256sum -c --quiet
+    mv "$tarball.tmp" "$tarball"
+  fi
+  rm -rf "$dir" "$dir.tmp"
+  mkdir -p "$dir.tmp"
+  tar -xJf "$tarball" -C "$dir.tmp" --no-same-owner
+  [ -x "$dir.tmp/bin/ppcross8086" ]
+  [ -d "$dir.tmp/lib/fpc/$version/units/msdos/8086-compact" ]
+  mv "$dir.tmp" "$dir"
+  echo "$sha256" > "$stamp"
+fi
