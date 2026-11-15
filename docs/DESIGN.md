@@ -1,23 +1,23 @@
 # less16 — Minimal Full-Screen Pager for DOS
 
-**Status:** Proposed design (v0.1)  
-**Implementation language:** Free Pascal  
-**Executable:** `LESS16.EXE` (subject to compiler output and link verification)  
-**Target:** GR-DOS / MS-DOS 4.00-compatible real-mode DOS, including 8086/8088 systems  
+**Status:** Proposed design (v0.1)
+**Implementation language:** Free Pascal
+**Executable:** `LESS.EXE` (required output name; verify the compiler/linker produces this filename)
+**Target:** GR-DOS / MS-DOS 4.00-compatible real-mode DOS, including 8086/8088 systems
 **Scope:** Small, useful, read-only full-screen text pager; not a port of GNU `less`
 
 ## 1. Purpose
 
-`less16` provides interactive, full-screen viewing of text files on vintage DOS computers. Unlike `MORE`, it supports moving **backward as well as forward**, one line or one page at a time. In non-wrapping mode, it also scrolls horizontally.
+`less16` (distributed as `LESS.EXE`, invoked as `LESS`) provides interactive, full-screen viewing of text files on vintage DOS computers. Unlike `MORE`, it supports moving **backward as well as forward**, one line or one page at a time. In non-wrapping mode, it also scrolls horizontally.
 
 It must support both a named file and standard input:
 
 ```dos
-LESS16 AUTOEXEC.BAT
-LESS16 C:\DOS\README.TXT
-CAT FOO.TXT | LESS16
-TYPE FOO.TXT | LESS16
-LESS16 < FOO.TXT
+LESS AUTOEXEC.BAT
+LESS C:\DOS\README.TXT
+CAT FOO.TXT | LESS
+TYPE FOO.TXT | LESS
+LESS < FOO.TXT
 ```
 
 `CAT` is an example of an external command, not a dependency. The standard DOS `TYPE` command and DOS input redirection must work as well.
@@ -39,7 +39,7 @@ This is deliberately **not** a feature-complete clone of Unix `less`. Search, mu
 ### 3.1 Command line
 
 ```text
-LESS16 [options] [filename]
+LESS [options] [filename]
 
 Options:
   -w, /W        Wrap long lines (default)
@@ -127,9 +127,9 @@ DOS shells may implement pipes with temporary files, but **do not assume stdin i
 4. If no safe scratch directory is configured, or storage is insufficient, emit a clear diagnostic explaining how to set `TEMP`/`TMP`. The program must not corrupt data, silently truncate input, or pretend that backward scrolling works.
 5. Spooling an **unbounded/live stream** is not supported in v0.1; completion/EOF is required before the interactive display. A later version can implement streaming ingestion and a bounded-memory backward history.
 
-This makes `TYPE FOO.TXT | LESS16` and `CAT FOO.TXT | LESS16` functional on systems with suitable scratch space, while being candid about DOS machines that only have two floppy drives. A future optimization may spool in RAM or use a bounded-memory ring buffer before needing disk space, but neither is required initially.
+This makes `TYPE FOO.TXT | LESS` and `CAT FOO.TXT | LESS` functional on systems with suitable scratch space, while being candid about DOS machines that only have two floppy drives. A future optimization may spool in RAM or use a bounded-memory ring buffer before needing disk space, but neither is required initially.
 
-For a two-floppy system, users should prefer `LESS16 B:\FOO.TXT` (direct seekable access), avoiding any scratch disk requirement.
+For a two-floppy system, users should prefer `LESS B:\FOO.TXT` (direct seekable access), avoiding any scratch disk requirement.
 
 ### 5.3 Line index and memory use
 
@@ -142,7 +142,7 @@ For a two-floppy system, users should prefer `LESS16 B:\FOO.TXT` (direct seekabl
 
 ## 6. Implementation structure (Free Pascal)
 
-Suggested modules, which may initially be collapsed into fewer source files:
+Suggested modules, which may initially be collapsed into fewer source files. The source/project name may remain `less16`, but the packaged executable **must be named `LESS.EXE`**:
 
 | Unit | Responsibility |
 |---|---|
@@ -194,8 +194,8 @@ Automate under GR-DOS in QEMU where possible; check on real 8088/8086 hardware o
 
 ### Functional tests
 
-- [ ] `LESS16 FOO.TXT` opens a named file and supports Up, Down, Page Up, Page Down, Home, End, Q and Esc.
-- [ ] `LESS16 < FOO.TXT` and `TYPE FOO.TXT | LESS16` work with navigation; also test `CAT FOO.TXT | LESS16` when `CAT` is installed.
+- [ ] `LESS FOO.TXT` opens a named file and supports Up, Down, Page Up, Page Down, Home, End, Q and Esc.
+- [ ] `LESS < FOO.TXT` and `TYPE FOO.TXT | LESS` work with navigation; also test `CAT FOO.TXT | LESS` when `CAT` is installed.
 - [ ] With `-S`, Left/Right move a horizontally clipped viewport and never modify vertical position.
 - [ ] `W` toggles wrapping; navigation and position remain consistent.
 - [ ] Page movement is clamped at beginning/end of file; screen overlap and status reflect the current position.
@@ -213,7 +213,7 @@ Automate under GR-DOS in QEMU where possible; check on real 8088/8086 hardware o
 - [ ] Verify no 286/386, DPMI, XMS or EMS requirement.
 - [ ] Include in **full GR-DOS CF/hard-disk distribution**, ordinarily under `C:\DOS`.
 - [ ] **Do not alter the frozen 360 KB GR-DOS boot image.** Include on larger curated boot disks only when space and utility justify it, per GR-DOS issue #17.
-- [ ] Test the **A: boot / B: data** scenario with `LESS16 B:\README.TXT` and no need to write to B:.
+- [ ] Test the **A: boot / B: data** scenario with `LESS B:\README.TXT` and no need to write to B:.
 - [ ] Document executable size, observed minimum free conventional memory, and responsiveness on XT-class hardware.
 
 ## 9. Explicit non-goals for v0.1
