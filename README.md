@@ -10,7 +10,7 @@ GNU `less`. The design is in [`docs/DESIGN.md`](docs/DESIGN.md).
 `less.exe` is a compact-model, real-mode 8086 executable that runs on
 any DOS from an original PC up. It needs no DPMI, XMS or EMS.
 
-`less.exe` is about 41 KB. It reads files of any size (32-bit offsets,
+`less.exe` is about 44 KB. It reads files of any size (32-bit offsets,
 a sparse line index) without loading them into memory: it keeps 16 KB
 of read buffers and 4 bytes per 32 lines of input.
 
@@ -22,12 +22,36 @@ of read buffers and 4 bytes per 32 lines of input.
 
     -w, /W         wrap long lines (default)
     -S, /S         do not wrap long lines; scroll horizontally
+    --start=N      view only the file's bytes from offset N (default 0)
+    --end=N        ...up to, not including, offset N (default: its end)
+    --length=N     ...or N bytes from --start
+    --label=TEXT   show TEXT instead of the file name
     -h, -?, /?,
         --help     display help and exit
         --version  display version and exit
 
 Options are case-insensitive. With no filename, standard input is read
 only if it is redirected or piped.
+
+**Byte ranges:** `--start`, `--end` and `--length` show only part of a
+named file, without copying it anywhere, so another program can page
+one section of a larger file:
+
+    LESS --start=10240 --length=1834 --label=COPY C:\DOS\GRDOS.HLP
+
+The range is viewed exactly as if it were the whole file: its first
+byte begins line 1, its end is the end of input, and no byte outside it
+is ever shown. A range that starts or ends mid-line cuts that line; a
+range starting on the LF of a CRLF begins with an empty line, and one
+ending on the CR ends with a complete line. Line numbers count from the
+start of the range, and a final Ctrl+Z in the range is dropped. Offsets
+are decimal, 0 to 2147483647. `--end` and `--length` cannot be combined;
+without either, the range runs to the end of the file. An empty range
+(`--start` equal to the end) is allowed and shows an empty screen. The
+file must be an ordinary file: a range of standard input or of a device
+is refused, and a range reaching past the end of the file is an error
+rather than being clipped. `--label` (also allowed without a range)
+replaces the file name in the status line; use a label without spaces.
 
 | Key | Action |
 |---|---|
@@ -56,8 +80,10 @@ so nothing is written to a disk you did not choose. The scratch file is
 removed on exit. On a two-floppy system, view files by name
 (`LESS B:\README.TXT`), which never writes anything.
 
-Exit status: 0 on success, 1 for a bad option or operand (or no input),
-2 for an input, memory, display or scratch-file error. Messages go to
+Exit status: 0 on success, 1 for a bad option or operand (or no input;
+or a range that is malformed, such as `--end` before `--start`, without
+looking at the file), 2 for an input, memory, display or scratch-file
+error (including a range outside the file, or of a device). Messages go to
 standard error.
 
 ## Building

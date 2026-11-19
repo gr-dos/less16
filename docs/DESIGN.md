@@ -45,6 +45,10 @@ LESS [options] [filename]
 Options:
   -w, /W        Wrap long lines (default)
   -S, /S        Do not wrap long lines; enable horizontal scrolling
+  --start=N     View only the file's bytes from offset N (v0.02, §12)
+  --end=N       ...up to, not including, offset N
+  --length=N    ...or N bytes from --start
+  --label=TEXT  Show TEXT instead of the file name in the status line
   -h, -?, /?,
   --help        Display short usage help and exit
   --version     Print "less (dos-less16) VERSION" and exit
@@ -286,6 +290,20 @@ hello16 defines three layouts (C only, assembly only, C reference plus assembly)
 - **Release (`.github/workflows/release.yml`):** on a push to `main`, if `VERSION` names a version without a `v<VERSION>` tag: build, test, tag, and publish a GitHub release with `less.exe` attached.
 - **README:** adapt hello16's README. Replace the libc16/Open Watcom sections with the pinned FPC toolchain, memory model and compiler flags. Describe the Free Pascal layout. Document usage, keys, exit codes and the `TEMP`/`TMP` requirement for piped input.
 - **Files:** `less16.pas` and its units, `Makefile`, `VERSION`, `scripts/fetch-fpc8086`, `tests/run.sh` (plus the 8086 DOSBox-X wrapper and any host unit tests), the two workflows, `README.md`, `LICENSE`, and `.gitignore` (ignoring `*.o`, `*.ppu`, `*.exe`, `*.map`, `/build/`).
+
+## 12. Byte-range viewing (v0.02)
+
+Added for GR-DOS `HELP.EXE` ([issue #2](https://github.com/gr-dos/less16/issues/2)): each help topic is a contiguous byte range of `GRDOS.HLP`, and HELP launches LESS on that range for backward and forward navigation, with no scratch file and no writable disk.
+
+```dos
+LESS --start=10240 --length=1834 --label=COPY C:\DOS\GRDOS.HLP
+```
+
+- **Syntax:** `--start=N` (default 0) and either `--end=N` (exclusive) or `--length=N` (default: to the end of the file). Offsets are decimal `LongInt`s, 0 to 2147483647, parsed digit by digit with an overflow check (no `Val`). `--label=TEXT` replaces the name in the status line; it is independent of ranges. Options are case-insensitive; the label keeps its case.
+- **Virtual file:** `input16` already read the input relative to a base offset (the position of a redirected handle) and clamped every block to `InSize`. A range sets that base to the start and `InSize` to its length, so `lines16`, `view16` and the sparse index see only the range: line numbers, `(END)`, Home/End and PgUp/PgDn are relative to it, and no read returns or shows a byte outside it. Blocks are 4 KiB from the start of the range, not of the file. Nothing is copied and nothing extra is kept in memory.
+- **Boundaries:** the range is treated exactly as a file holding just those bytes. A range starting mid-line shows the rest of that line as line 1; one ending mid-line ends with a line without a line end. Starting on the LF of a CRLF gives an empty first line; ending on the CR of a CRLF ends with a complete line. A final Ctrl+Z of the range is dropped, as for a whole file.
+- **Validation:** usage errors (status 1) are found before the file is opened: `--end` before `--start`, `--end` with `--length`, `--start` + `--length` overflowing, a malformed number, or a range option without a filename (a range of standard input is refused, since it could need spooling). Input errors (status 2): the file cannot be opened, is a device (IOCTL), cannot be seeked to its end, or the start or end is past its end. A range is never silently clipped, so a stale HELP index is reported instead of showing the wrong text. An empty range is valid and shows an empty screen.
+- **Tests:** `tests/run.sh` covers zero- and one-byte ranges, ranges starting and ending at CRLF, LF and CR line ends and mid-line, a range to EOF and an empty one at EOF, a range past 64 KiB that starts and ends mid-line with End/PgUp/Up/Home/PgDn, `-S` and `W` with a range, a final Ctrl+Z, `--label`, and every usage and input error above.
 
 ## References
 

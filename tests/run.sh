@@ -59,6 +59,16 @@ awk 'BEGIN { for (i = 1; i <= 10000; i++)
 awk 'BEGIN { e[0] = "\n"; e[1] = "\r"; e[2] = "\r\n";
     for (i = 1; i <= 3000; i++) printf "m %04d%s", i, e[i % 3] }' > mixed.txt
 
+# r.txt: CRLF, LF and CR line ends at known offsets, for byte ranges:
+#   aaa 0-2, CRLF 3-4, bbb 5-7, CRLF 8-9, ccc 10-12, LF 13,
+#   ddd 14-16, CR 17, eee 18-20, CRLF 21-22 (23 bytes)
+printf 'aaa\r\nbbb\r\nccc\nddd\reee\r\n' > r.txt
+# big.txt ranges: from 5 bytes into line 5000 (past 64 KiB) to 4 bytes
+# into line 7000; b.txt's last 4 bytes end in a Ctrl+Z
+big5000=$(($(head -n 4999 big.txt | wc -c) + 5))
+big7000=$(($(head -n 6999 big.txt | wc -c) + 4))
+btail=$(($(wc -c < b.txt) - 4))
+
 cat > rc.bat <<'EOS'
 @echo off
 if errorlevel 2 goto rc2
@@ -143,6 +153,54 @@ set TEMP=C:\SCRATCH
 less --test-screen=40x4 --test-keys=. <NUL >o24.txt
 call rc 24
 dir /b scratch >o25.txt
+EOS
+
+# byte ranges (--start, --end, --length) and --label
+cat >> steps.bat <<EOS
+less --test-screen=40x4 --test-keys=. --start=5 --end=10 r.txt >o31.txt
+call rc 31
+less --test-screen=40x4 --test-keys=.E. --start=5 --length=0 r.txt >o32.txt
+call rc 32
+less --test-screen=40x4 --test-keys=. --start=6 --length=1 r.txt >o33.txt
+call rc 33
+less --test-screen=40x4 --test-keys=. --start=4 --end=9 r.txt >o34.txt
+call rc 34
+less --test-screen=40x4 --test-keys=. --start=1 --end=12 r.txt >o35.txt
+call rc 35
+less --test-screen=40x4 --test-keys=. --start=11 r.txt >o36.txt
+call rc 36
+less --test-screen=40x4 --test-keys=. --start=14 --end=18 r.txt >o37.txt
+call rc 37
+less --test-screen=40x4 --test-keys=. --start=23 r.txt >o38.txt
+call rc 38
+less --test-screen=40x4 --test-keys=.E.PP.U.H.UP.N. --start=$big5000 --end=$big7000 big.txt >o39.txt
+call rc 39
+less -S --test-screen=40x4 --test-keys=.RR.W. --start=69990 --end=70004 --label=Topic long.txt >o40.txt
+call rc 40
+less --test-screen=40x4 --test-keys=. --start=$btail b.txt >o41.txt
+call rc 41
+less --start=5 --end=4 r.txt >o42.txt
+call rc 42
+less --end=5 --length=1 r.txt >o43.txt
+call rc 43
+type r.txt | less --start=1 >o44.txt
+call rc 44
+less --start=24 r.txt >o45.txt
+call rc 45
+less --end=24 r.txt >o46.txt
+call rc 46
+less --start=x r.txt >o47.txt
+call rc 47
+less --start=2147483648 r.txt >o48.txt
+call rc 48
+less --start=2147483647 --length=1 r.txt >o49.txt
+call rc 49
+less --start=0 NUL >o50.txt
+call rc 50
+less --length=1 missing.txt >o51.txt
+call rc 51
+less --label=My.Label --test-screen=40x4 --test-keys=. <a.txt >o52.txt
+call rc 52
 EOS
 
 # Smoke test of the real BIOS keyboard and video path: AUTOTYPE feeds
@@ -497,6 +555,176 @@ expect 24 <<'EOS'
 --
 EOS
 expect 25 < /dev/null
+
+# byte ranges: exactly the bytes from --start up to --end (or
+# --start + --length), viewed as a whole file; a range may start or end
+# mid-line or between the CR and LF of a CRLF
+rc 31 0
+expect 31 <<'EOS'
+bbb
+
+
+ r.txt  Line 1/1  WRAP  (END)
+--
+EOS
+# empty range, and End in it
+rc 32 0
+expect 32 <<'EOS'
+
+
+
+ r.txt  Line 0/0  WRAP  (END)
+--
+
+
+
+ r.txt  Line 0/0  WRAP  (END)
+--
+EOS
+# one byte
+rc 33 0
+expect 33 <<'EOS'
+b
+
+
+ r.txt  Line 1/1  WRAP  (END)
+--
+EOS
+# starts on the LF of a CRLF (an empty line), ends on a CR
+rc 34 0
+expect 34 <<'EOS'
+
+bbb
+
+ r.txt  Line 1/2  WRAP  (END)
+--
+EOS
+# starts and ends mid-line
+rc 35 0
+expect 35 <<'EOS'
+aa
+bbb
+cc
+ r.txt  Line 1/3  WRAP  (END)
+--
+EOS
+# --start alone runs to the end of the file
+rc 36 0
+expect 36 <<'EOS'
+cc
+ddd
+eee
+ r.txt  Line 1/3  WRAP  (END)
+--
+EOS
+# ends on a bare CR
+rc 37 0
+expect 37 <<'EOS'
+ddd
+
+
+ r.txt  Line 1/1  WRAP  (END)
+--
+EOS
+# starts at the end of the file: empty
+rc 38 0
+expect 38 <<'EOS'
+
+
+
+ r.txt  Line 0/0  WRAP  (END)
+--
+EOS
+# past 64 KiB, mid-line at both ends: End, PgUp, Up, Home, then Up
+# and PgUp stay at the range's start, PgDn
+rc 39 0
+expect 39 <<'EOS'
+05000 abcde
+line 05001 abcdef
+line 05002 abcdefg
+ big.txt  Line 1  WRAP
+--
+line 06998 abcde
+line 06999 abcdef
+line
+ big.txt  Line 1999/2001  WRAP  (END)
+--
+line 06994 a
+line 06995 ab
+line 06996 abc
+ big.txt  Line 1995/2001  WRAP
+--
+line 06993
+line 06994 a
+line 06995 ab
+ big.txt  Line 1994/2001  WRAP
+--
+05000 abcde
+line 05001 abcdef
+line 05002 abcdefg
+ big.txt  Line 1/2001  WRAP
+--
+05000 abcde
+line 05001 abcdef
+line 05002 abcdefg
+ big.txt  Line 1/2001  WRAP
+--
+line 05002 abcdefg
+line 05003 abcdefgh
+line 05004 abcdefghi
+ big.txt  Line 3/2001  WRAP
+--
+EOS
+# -S with a range: Right is clamped to the range's widest line; W;
+# --label replaces the file name
+rc 40 0
+expect 40 <<'EOS'
+yyyyyyyyyy
+END
+
+ Topic  Line 1/2  NOWRAP  (END)
+--
+yyyyyyyyyy
+END
+
+ Topic  Line 1/2  NOWRAP  (END)
+--
+yyyyyyyyyy
+END
+
+ Topic  Line 1/2  WRAP  (END)
+--
+EOS
+# a final Ctrl+Z of the range is dropped, as for a whole file
+rc 41 0
+expect 41 <<'EOS'
+ctl
+
+
+ b.txt  Line 1/1  WRAP  (END)
+--
+EOS
+# range usage errors: end before start, --end with --length, no
+# filename, not a number, too large, start + length overflows
+for n in 42 43 44 47 48 49; do
+    rc $n 1
+    expect $n < /dev/null
+done
+# range input errors: start or end past the end of the file, a device,
+# a missing file
+for n in 45 46 50 51; do
+    rc $n 2
+    expect $n < /dev/null
+done
+# --label for standard input, case kept
+rc 52 0
+expect 52 <<'EOS'
+line 1
+line 2
+line 3
+ My.Label  Line 1  WRAP
+--
+EOS
 
 # interactive smoke test: quits normally, nothing on standard output
 rc 26 0
