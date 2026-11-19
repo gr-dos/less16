@@ -24,6 +24,10 @@ var
 { True if standard input is the console, i.e. not redirected. }
 function StdinIsConsole: Boolean;
 procedure OpenNamed(const Name: String);
+{ Views only bytes Start up to (not including) Stop of the named file,
+  as if they were the whole file; Stop < 0 means its end.  The file
+  must be seekable (never spooled), and the range inside it. }
+procedure OpenRange(const Name: String; Start, Stop: LongInt);
 procedure OpenStdin;
 procedure CloseInput;
 
@@ -354,7 +358,8 @@ begin
   StdinIsConsole := DeviceInfo(0, Info) and ((Info and $81) = $81);
 end;
 
-procedure OpenNamed(const Name: String);
+{ Opens Name read-only as the input handle. }
+procedure OpenFile(const Name: String);
 var
   Z: array[0..255] of Char;
   R: Registers;
@@ -369,7 +374,39 @@ begin
   InName := Name;
   InHandle := R.AX;
   InOpen := True;
-  Prepare(R.AX);
+end;
+
+procedure OpenNamed(const Name: String);
+begin
+  OpenFile(Name);
+  Prepare(InHandle);
+end;
+
+procedure OpenRange(const Name: String; Start, Stop: LongInt);
+var
+  Info: Word;
+  Size: LongInt;
+begin
+  OpenFile(Name);
+  AllocBlocks;
+  if not DeviceInfo(InHandle, Info) or ((Info and $80) <> 0) then
+    Fatal('cannot view a byte range of ' + Name + ': not a file', ExitIO);
+  if DosSeek(InHandle, 0, 2, Size) <> 0 then
+    Fatal('cannot view a byte range of ' + Name + ': not seekable',
+          ExitIO);
+  if Stop < 0 then
+    Stop := Size;
+  if (Start > Size) or (Stop > Size) then
+    Fatal('byte range ' + IntToStr(Start) + '-' + IntToStr(Stop) +
+          ' is outside ' + Name + ' (' + IntToStr(Size) + ' bytes)',
+          ExitIO);
+  if Stop < Start then
+    Fatal('byte range ends before it starts', ExitIO);
+  Base := Start;
+  InSize := Stop - Start;
+  { The same end-of-text rule as a whole file, for the range's end. }
+  if (InSize > 0) and (ByteAt(InSize - 1) = 26) then
+    Dec(InSize);
 end;
 
 procedure OpenStdin;

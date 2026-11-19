@@ -8,6 +8,9 @@
   view16 (layout, navigation), screen16 (video), keys16 (keyboard),
   util16 (errors).
 
+  --start/--end/--length view a byte range of a named file as if it
+  were the whole file (for GR-DOS HELP: one topic of GRDOS.HLP).
+
   Hidden test options (not in --help): --test-keys=SCRIPT replaces the
   keyboard with SCRIPT (see keys16) and the screen with an off-screen
   buffer that the '.' key writes to standard output; --test-screen=CxR
@@ -30,6 +33,11 @@ var
   TestMode: Boolean;
   TestKeys: String;
   TestCols, TestRows: Word;
+  { --start, --end, --length: view only a byte range of the file }
+  RangeStart, RangeEnd, RangeLen: LongInt;
+  HaveStart, HaveEnd, HaveLen: Boolean;
+  Label_: String;
+  HaveLabel: Boolean;
   OldBreak: Byte;
   K: TKey;
   BreakSaved: Boolean;
@@ -51,6 +59,10 @@ begin
   WriteLn(F);
   WriteLn(F, '  -w, /W         wrap long lines (default)');
   WriteLn(F, '  -S, /S         do not wrap long lines; scroll horizontally');
+  WriteLn(F, '  --start=N      view only FILE''s bytes from offset N (default 0)');
+  WriteLn(F, '  --end=N        ...up to, not including, offset N (default: EOF)');
+  WriteLn(F, '  --length=N     ...or N bytes from --start');
+  WriteLn(F, '  --label=TEXT   show TEXT instead of the file name');
   WriteLn(F, '  -h, -?, /?,');
   WriteLn(F, '      --help     display this help and exit');
   WriteLn(F, '      --version  output version information and exit');
@@ -65,6 +77,36 @@ begin
   WriteLn(StdErr, ProgName, ': ', What, ' ''', Arg, '''');
   WriteLn(StdErr, 'Try ''less --help'' for more information.');
   Halt(ExitUsage);
+end;
+
+{ Writes "less: MSG" and the --help hint to standard error. }
+procedure UsageError(const Msg: String);
+begin
+  WriteLn(StdErr, ProgName, ': ', Msg);
+  WriteLn(StdErr, 'Try ''less --help'' for more information.');
+  Halt(ExitUsage);
+end;
+
+{ A byte offset or count: decimal digits only, 0 to 2147483647. }
+function ParseOfs(const A, V: String): LongInt;
+var
+  I: Integer;
+  N: LongInt;
+  D: Byte;
+begin
+  if V = '' then
+    BadArg('bad number in', A);
+  N := 0;
+  for I := 1 to Length(V) do
+  begin
+    if not (V[I] in ['0'..'9']) then
+      BadArg('bad number in', A);
+    D := Ord(V[I]) - Ord('0');
+    if N > (MaxLongInt - D) div 10 then
+      BadArg('number too large in', A);
+    N := N * 10 + D;
+  end;
+  ParseOfs := N;
 end;
 
 { "--test-screen=CxR" value. }
@@ -99,6 +141,14 @@ begin
   TestRows := 25;
   HaveFile := False;
   FileName := '';
+  HaveStart := False;
+  HaveEnd := False;
+  HaveLen := False;
+  RangeStart := 0;
+  RangeEnd := -1;
+  RangeLen := 0;
+  HaveLabel := False;
+  Label_ := '';
   for I := 1 to ParamCount do
   begin
     A := ParamStr(I);
@@ -117,6 +167,26 @@ begin
       StartWrap := True
     else if (L = '-s') or (L = '/s') then
       StartWrap := False
+    else if Copy(L, 1, 8) = '--start=' then
+    begin
+      RangeStart := ParseOfs(A, Copy(L, 9, 255));
+      HaveStart := True;
+    end
+    else if Copy(L, 1, 6) = '--end=' then
+    begin
+      RangeEnd := ParseOfs(A, Copy(L, 7, 255));
+      HaveEnd := True;
+    end
+    else if Copy(L, 1, 9) = '--length=' then
+    begin
+      RangeLen := ParseOfs(A, Copy(L, 10, 255));
+      HaveLen := True;
+    end
+    else if Copy(L, 1, 8) = '--label=' then
+    begin
+      Label_ := Copy(A, 9, 255);
+      HaveLabel := True;
+    end
     else if Copy(L, 1, 12) = '--test-keys=' then
     begin
       TestMode := True;
@@ -133,6 +203,23 @@ begin
       FileName := A;
       HaveFile := True;
     end;
+  end;
+
+  { The range, as a start and an exclusive end (-1: end of file). }
+  if HaveStart or HaveEnd or HaveLen then
+  begin
+    if not HaveFile then
+      UsageError('--start, --end and --length need a filename');
+    if HaveEnd and HaveLen then
+      UsageError('--end and --length cannot be used together');
+    if HaveLen then
+    begin
+      if RangeLen > MaxLongInt - RangeStart then
+        UsageError('--start plus --length is too large');
+      RangeEnd := RangeStart + RangeLen;
+    end;
+    if HaveEnd and (RangeEnd < RangeStart) then
+      UsageError('--end is before --start');
   end;
 end;
 
@@ -206,10 +293,14 @@ begin
   AddExitProc(@Cleanup);
   InstallHandlers;
 
-  if HaveFile then
+  if HaveStart or HaveEnd or HaveLen then
+    OpenRange(FileName, RangeStart, RangeEnd)
+  else if HaveFile then
     OpenNamed(FileName)
   else
     OpenStdin;
+  if HaveLabel then
+    InName := Label_;
   InitLines;
 
   ScreenDetect(TestMode, TestCols, TestRows);
